@@ -1,17 +1,7 @@
-// @deno-types="npm:@types/leaflet"
 import leaflet from "leaflet";
-
-// Style sheets
-import "leaflet/dist/leaflet.css"; // supporting style for Leaflet
-import "./style.css"; // student-controlled page style
-
-// Fix missing marker images
-import "./_leafletWorkaround.ts"; // fixes for missing Leaflet images
-
-// Import our luck function
-import luck from "./_luck.ts";
-
-// Create basic UI elements
+import "leaflet/dist/leaflet.css";
+import "./_leafletWorkaround.ts";
+import "./style.css";
 
 const controlPanelDiv = document.createElement("div");
 controlPanelDiv.id = "controlPanel";
@@ -25,29 +15,29 @@ const statusPanelDiv = document.createElement("div");
 statusPanelDiv.id = "statusPanel";
 document.body.append(statusPanelDiv);
 
-// Our classroom location
-const CLASSROOM_LATLNG = leaflet.latLng(
+const START_LOCATION = leaflet.latLng(
   36.997936938057016,
   -122.05703507501151,
 );
 
-// Tunable gameplay parameters
-const GAMEPLAY_ZOOM_LEVEL = 19;
-const TILE_DEGREES = 1e-4;
-const NEIGHBORHOOD_SIZE = 8;
-const CACHE_SPAWN_PROBABILITY = 0.1;
+const NULL_ISLAND = leaflet.latLng(0, 0);
 
-// Create the map (element with id "map" is defined in index.html)
+const GAME_ZOOM = 19;
+const TILE_DEG = 1e-4;
+const NEARBY_RADIUS = 3;
+const _WIN_THRESHOLD = 32;
+
+type CellId = { i: number; j: number };
+
 const map = leaflet.map(mapDiv, {
-  center: CLASSROOM_LATLNG,
-  zoom: GAMEPLAY_ZOOM_LEVEL,
-  minZoom: GAMEPLAY_ZOOM_LEVEL,
-  maxZoom: GAMEPLAY_ZOOM_LEVEL,
+  center: START_LOCATION,
+  zoom: GAME_ZOOM,
+  minZoom: GAME_ZOOM,
+  maxZoom: GAME_ZOOM,
   zoomControl: false,
   scrollWheelZoom: false,
 });
 
-// Populate the map with a background tile layer
 leaflet
   .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -56,60 +46,41 @@ leaflet
   })
   .addTo(map);
 
-// Add a marker to represent the player
-const playerMarker = leaflet.marker(CLASSROOM_LATLNG);
-playerMarker.bindTooltip("That's you!");
-playerMarker.addTo(map);
+const playerLatLng = START_LOCATION;
+const _playerMarker = leaflet
+  .marker(playerLatLng)
+  .addTo(map)
+  .bindTooltip("You");
 
-// Display the player's points
-let playerPoints = 0;
-statusPanelDiv.innerHTML = "No points yet...";
-
-// Add caches to the map by cell numbers
-function spawnCache(i: number, j: number) {
-  // Convert cell numbers into lat/lng bounds
-  const origin = CLASSROOM_LATLNG;
-  const bounds = leaflet.latLngBounds([
-    [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-    [origin.lat + (i + 1) * TILE_DEGREES, origin.lng + (j + 1) * TILE_DEGREES],
-  ]);
-
-  // Add a rectangle to the map to represent the cache
-  const rect = leaflet.rectangle(bounds);
-  rect.addTo(map);
-
-  // Handle interactions with the cache
-  rect.bindPopup(() => {
-    // Each cache has a random point value, mutable by the player
-    let pointValue = Math.floor(luck([i, j, "initialValue"].toString()) * 100);
-
-    // The popup offers a description and button
-    const popupDiv = document.createElement("div");
-    popupDiv.innerHTML = `
-                <div>There is a cache here at "${i},${j}". It has value <span id="value">${pointValue}</span>.</div>
-                <button id="poke">poke</button>`;
-
-    // Clicking the button decrements the cache's value and increments the player's points
-    popupDiv
-      .querySelector<HTMLButtonElement>("#poke")!
-      .addEventListener("click", () => {
-        pointValue--;
-        popupDiv.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-          pointValue.toString();
-        playerPoints++;
-        statusPanelDiv.innerHTML = `${playerPoints} points accumulated`;
-      });
-
-    return popupDiv;
-  });
+function latLngToCell(latlng: leaflet.LatLng): CellId {
+  const i = Math.floor((latlng.lat - NULL_ISLAND.lat) / TILE_DEG);
+  const j = Math.floor((latlng.lng - NULL_ISLAND.lng) / TILE_DEG);
+  return { i, j };
 }
 
-// Look around the player's neighborhood for caches to spawn
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-    // If location i,j is lucky enough, spawn a cache!
-    if (luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY) {
-      spawnCache(i, j);
-    }
-  }
+function _cellToBounds(cell: CellId): leaflet.LatLngBounds {
+  const lat0 = NULL_ISLAND.lat + cell.i * TILE_DEG;
+  const lng0 = NULL_ISLAND.lng + cell.j * TILE_DEG;
+  return leaflet.latLngBounds(
+    [lat0, lng0],
+    [lat0 + TILE_DEG, lng0 + TILE_DEG],
+  );
 }
+
+function manhattan(a: CellId, b: CellId) {
+  return Math.abs(a.i - b.i) + Math.abs(a.j - b.j);
+}
+
+function getPlayerCell(): CellId {
+  return latLngToCell(playerLatLng);
+}
+
+function _nearby(cell: CellId) {
+  return manhattan(cell, getPlayerCell()) <= NEARBY_RADIUS;
+}
+
+controlPanelDiv.innerHTML = `
+  <div><strong>Cache Crafter</strong></div>
+`;
+
+statusPanelDiv.textContent = "Holding: (none)";
