@@ -1,8 +1,8 @@
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "./style.css";
 import "./_leafletWorkaround.ts";
 import luck from "./_luck.ts";
-import "./style.css";
 
 const controlPanelDiv = document.createElement("div");
 controlPanelDiv.id = "controlPanel";
@@ -48,8 +48,8 @@ leaflet
   })
   .addTo(map);
 
-const playerLatLng = START_LOCATION;
-const _playerMarker = leaflet
+let playerLatLng = START_LOCATION;
+const playerMarker = leaflet
   .marker(playerLatLng)
   .addTo(map)
   .bindTooltip("You");
@@ -77,7 +77,7 @@ function getPlayerCell(): CellId {
   return latLngToCell(playerLatLng);
 }
 
-function _nearby(cell: CellId) {
+function nearby(cell: CellId) {
   return manhattan(cell, getPlayerCell()) <= NEARBY_RADIUS;
 }
 
@@ -119,6 +119,17 @@ function cellKey(cell: CellId): string {
   return `${cell.i},${cell.j}`;
 }
 
+function styleCell(cell: CellId) {
+  const item = drawn.get(cellKey(cell));
+  if (!item) return;
+  const isNearby = nearby(cell);
+  item.rect.setStyle({
+    color: isNearby ? "#000" : "#888",
+    weight: isNearby ? 2 : 1,
+    fillOpacity: 0.05,
+  });
+}
+
 function drawCell(cell: CellId) {
   const bounds = cellToBounds(cell);
   const rect = leaflet.rectangle(bounds, { weight: 1, fillOpacity: 0.05 })
@@ -130,7 +141,13 @@ function drawCell(cell: CellId) {
     .marker(center, { icon: makeLabel(labelTextFor(v)), interactive: false })
     .addTo(map);
 
-  drawn.set(cellKey(cell), { rect, label, cell });
+  rect.on("click", () => {
+    if (!nearby(cell)) return;
+  });
+
+  const info: DrawnCell = { rect, label, cell };
+  drawn.set(cellKey(cell), info);
+  styleCell(cell);
 }
 
 function updateVisibleCells() {
@@ -154,6 +171,8 @@ function updateVisibleCells() {
       needed.add(key);
       if (!drawn.has(key)) {
         drawCell(cell);
+      } else {
+        styleCell(cell);
       }
     }
   }
@@ -175,8 +194,54 @@ map.on("moveend", () => {
   updateVisibleCells();
 });
 
+function restyleAllVisibleCells() {
+  for (const { cell } of drawn.values()) {
+    styleCell(cell);
+  }
+}
+
+function movePlayer(di: number, dj: number) {
+  playerLatLng = leaflet.latLng(
+    playerLatLng.lat + di * TILE_DEG,
+    playerLatLng.lng + dj * TILE_DEG,
+  );
+  playerMarker.setLatLng(playerLatLng);
+
+  map.panTo(playerLatLng);
+  restyleAllVisibleCells();
+}
+
 controlPanelDiv.innerHTML = `
   <div><strong>Cache Crafter</strong></div>
+  <div class="controls-row">
+    <button id="moveNorth">↑ North</button>
+  </div>
+  <div class="controls-row">
+    <button id="moveWest">← West</button>
+    <button id="moveCenter">⌖ Center Map</button>
+    <button id="moveEast">East →</button>
+  </div>
+  <div class="controls-row">
+    <button id="moveSouth">South ↓</button>
+  </div>
 `;
 
 statusPanelDiv.textContent = "Holding: (none)";
+
+const btnNorth = document.getElementById("moveNorth") as
+  | HTMLButtonElement
+  | null;
+const btnSouth = document.getElementById("moveSouth") as
+  | HTMLButtonElement
+  | null;
+const btnWest = document.getElementById("moveWest") as HTMLButtonElement | null;
+const btnEast = document.getElementById("moveEast") as HTMLButtonElement | null;
+const btnCenter = document.getElementById("moveCenter") as
+  | HTMLButtonElement
+  | null;
+
+btnNorth?.addEventListener("click", () => movePlayer(+1, 0));
+btnSouth?.addEventListener("click", () => movePlayer(-1, 0));
+btnWest?.addEventListener("click", () => movePlayer(0, -1));
+btnEast?.addEventListener("click", () => movePlayer(0, +1));
+btnCenter?.addEventListener("click", () => map.panTo(playerLatLng));
