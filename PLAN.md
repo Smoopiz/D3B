@@ -18,6 +18,6 @@ Crafting mastery & memoryless cells — inventory, crafting, higher win threshol
 ## Checklist
 
 [x] Global grid scaffold
-[ ] Viewport-driven grid
+[x] Viewport-driven grid
 [ ] Player movement & nearby radius
 [ ] Crafting mastery & memoryless cells
